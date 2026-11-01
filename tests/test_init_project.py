@@ -5,8 +5,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/init_project.sh'
+FETCH = Path(__file__).resolve().parents[1] / 'scripts/fetch_base.sh'
 
 
 class BootstrapTests(unittest.TestCase):
@@ -14,6 +16,12 @@ class BootstrapTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix='recomp-test-')
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+        # Hermetic: never pick up the user's real cached base or RECOMP_BASE.
+        environment = {k: v for k, v in os.environ.items() if k != 'RECOMP_BASE'}
+        environment['XDG_CACHE_HOME'] = str(self.root / 'cache')
+        patcher = mock.patch.dict(os.environ, environment, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.base = self.root / 'base with spaces'
         self.base.mkdir()
         self.out = self.root / 'project with spaces'
@@ -287,6 +295,59 @@ if '--info' not in sys.argv:
         self.assertTrue(agents.startswith('# mygame'))
         self.assertNotIn('<PROJECT>', agents)
         self.assertIn('/mygame.ini', (self.out / '.gitignore').read_text())
+
+    def add_generator_files(self):
+        for name in ('tools/gen.py', 'tools/lifter.py'):
+            (self.base / name).write_text('# synthetic\n')
+        self.git('add', '.')
+        self.git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'gen')
+        return self.git('rev-parse', 'HEAD').stdout.decode().strip()
+
+    def fetch(self, *extra):
+        return subprocess.run(['bash', str(FETCH), *extra], capture_output=True, text=True)
+
+    def test_fetch_base_pins_commit_and_is_idempotent(self):
+        rev = self.add_generator_files()
+        dest = self.root / 'fetched'
+        args = ('--url', self.base.as_uri(), '--rev', rev, '--dest', str(dest))
+        first = self.fetch(*args)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(first.stdout.strip(), str(dest))
+        self.assertEqual(subprocess.run(['git', '-C', str(dest), 'rev-parse', 'HEAD'], capture_output=True,
+                                        text=True).stdout.strip(), rev)
+        self.assertFalse(dest.with_name('fetched.partial').exists())
+        second = self.fetch(*args)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn('reusing', second.stderr)
+
+    def test_fetch_base_rejects_other_commit_and_short_rev(self):
+        rev = self.add_generator_files()
+        dest = self.root / 'fetched'
+        self.assertEqual(self.fetch('--url', self.base.as_uri(), '--rev', rev, '--dest', str(dest)).returncode, 0)
+        other = self.git('rev-parse', 'HEAD~1').stdout.decode().strip()
+        clash = self.fetch('--url', self.base.as_uri(), '--rev', other, '--dest', str(dest))
+        self.assertNotEqual(clash.returncode, 0)
+        self.assertEqual(self.fetch('--url', self.base.as_uri(), '--rev', rev[:7],
+                                    '--dest', str(self.root / 'x')).returncode, 2)
+
+    def test_init_falls_back_to_fetched_default_base(self):
+        sys.path.insert(0, str(SCRIPT.parent))
+        self.addCleanup(sys.path.remove, str(SCRIPT.parent))
+        from fetch_base import default_dest
+        rev = self.add_generator_files()
+        fetched = self.fetch('--url', self.base.as_uri(), '--rev', rev, '--dest', str(default_dest()))
+        self.assertEqual(fetched.returncode, 0, fetched.stderr)
+        result = subprocess.run(['bash', str(SCRIPT), '--out', str(self.out), '--no-extract'],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('using pinned base', result.stderr)
+        self.assertTrue((self.out / 'tools/gen.py').is_file())
+
+    def test_missing_base_names_fetch_command(self):
+        result = subprocess.run(['bash', str(SCRIPT), '--out', str(self.out), '--no-extract'],
+                                capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('fetch_base.sh', result.stderr)
 
 
 if __name__ == '__main__':

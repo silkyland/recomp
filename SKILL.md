@@ -15,13 +15,26 @@ automatic converter; a successful scaffold does not establish playability.
 
 ## Start or continue
 
-For a **new project**, obtain the paths to the user's own package, keys, target directory,
-and a trusted local base checkout. Ask for any missing paths (paths only; keys stay in their file).
+For a **new project**, obtain the paths to the user's own package, keys and target directory.
+Ask for any missing paths (paths only; keys stay in their file). Then, from this skill's directory:
 
 ```sh
+# 1. Fetch the base toolchain (gen.py, lifter.py, runtime). Pinned, idempotent, prints its path.
+bash scripts/fetch_base.sh
+# 2. Scaffold. Without --base it uses the base fetched in step 1.
+bash scripts/init_project.sh --out /work/new-game --name newgame --no-extract
+# 2b. With an extended base that has the extractor, extract in the same step instead:
 bash scripts/init_project.sh --pkg /external/game.nsp --keys /external/prod.keys \
-  --out /work/new-game --base /work/compatible-base --name newgame
+  --out /work/new-game --base /work/extended-base --name newgame
 ```
+
+`fetch_base.sh` clones [LASRecomp](https://github.com/peiikai/LASRecomp) at the verified commit
+`d23597d6cba13f0e3b4797a0c813c14ef86c684c` into `$XDG_CACHE_HOME/recomp/bases/` (default
+`~/.cache/...`). That base has **no extractor** (`nca_extract.py`, `inventory.py`), so with it use
+`--no-extract`, then extract ExeFS with any tool the user has and place the NSOs in
+`extracted/exefs/`. For an extended base, run `fetch_base.sh --url <repo> --rev <full-sha> --dest <dir>`
+and pass that path as `--base`. Base selection order: `--base`, then `RECOMP_BASE`, then the
+fetched default.
 
 Resolve the script relative to this skill's directory. It accepts `.nsp`, program `.nca`, `.xci`
 and compressed `.nsz`/`.xcz`/`.ncz`, handing each to the base extractor, whose `--info` pass
@@ -33,7 +46,8 @@ it lacks one, convert the package with a tool that has it. `--romfs` accepts `sr
   optional. Useful to inspect a base that lacks the extraction extensions.
 - `--no-copy`: retain existing project sources/templates; append missing ignore rules. Extraction
   requires an empty `extracted/` directory to avoid mixing builds. Never erase it automatically.
-- `RECOMP_BASE` supplies the base when `--base` is absent. There is no automatic base search.
+- `RECOMP_BASE` supplies the base when `--base` is absent; otherwise the `fetch_base.sh` default
+  location is used if present. Nothing else is searched.
 - Dependencies come from the base's `tools/requirements.txt` when present (prefer a pinned one),
   else an unpinned default set. Installation needs network access; a failed install is retried
   on the next run rather than silently skipped.
@@ -64,8 +78,8 @@ missing tracked files and submodule entries. Untracked additions are not copied.
 
 **LASRecomp is a lineage reference, not a guaranteed extraction-capable base.** At verified
 revision `d23597d6cba13f0e3b4797a0c813c14ef86c684c`, it has `nso.py`, `gen.py` and the runtime,
-but lacks `nca_extract.py` and `inventory.py`. The package workflow below needs a compatible
-extended checkout providing both. No public EoWRecomp source revision was supplied with this
+but lacks `nca_extract.py` and `inventory.py` (upstream `main` still lacked both as of 2026-10-29).
+The package workflow needs a compatible extended checkout providing both. No public EoWRecomp source revision was supplied with this
 skill; treat its detailed commands, diagnostic variables and failure stories as examples until
 confirmed in the selected checkout. Do not invent a repository URL or missing tool.
 

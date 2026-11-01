@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tempfile
 
+from fetch_base import default_dest
+
 SKILL = Path(__file__).resolve().parent.parent
 REQUIRED = ('tools/nso.py', 'runtime/rt.h', 'Makefile', 'LICENSE')
 EXTRACTION = ('tools/nca_extract.py', 'tools/inventory.py')
@@ -225,8 +227,11 @@ def main():
     if args.no_copy and args.base:
         print('init_project: --no-copy given; ignoring --base/RECOMP_BASE', file=sys.stderr)
     if not args.no_copy:
+        if not args.base and default_dest().is_dir():
+            args.base = default_dest()
+            print(f'init_project: using pinned base {args.base}', file=sys.stderr)
         if not args.base:
-            fail('select a trusted local --base checkout or set RECOMP_BASE')
+            fail('no base: run `bash scripts/fetch_base.sh` first, or pass --base / set RECOMP_BASE')
         base = Path(args.base).expanduser().resolve(strict=True)
         if contained(out, base) or contained(base, out):
             fail('base and output must not overlap')

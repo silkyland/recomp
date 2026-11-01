@@ -29,6 +29,8 @@ before extraction. The package and keys can live outside the project or in its g
 - `references/` — `pipeline.md` (stage-by-stage walkthrough), `tools.md` (tool inventory and
   what to copy vs adapt per game), `hard-parts.md` (Horizon mutex/condvar semantics,
   Maxwell shader translation, per-build-ID versioning, guest-deadlock debugging)
+- `scripts/fetch_base.sh` (wrapper for `fetch_base.py`) — clones the pinned base toolchain to a
+  known cache location; idempotent, refuses to reuse a checkout at a different commit.
 - `scripts/init_project.sh` (wrapper for `init_project.py`) — scaffolds a project: canonical-path
   checks, explicit base selection, copies tracked source, installs ignore rules, extracts and
   inventories with failure propagation. `--no-extract` scaffolds without a package or keys.
@@ -36,17 +38,22 @@ before extraction. The package and keys can live outside the project or in its g
   `STATUS.md`, `.gitignore` for the new project
 - `tests/` — offline regression tests for the bootstrap (synthetic fixtures only)
 
-Not affiliated with Nintendo. Requires a base repo providing `tools/` + `runtime/` (e.g. a
-LASRecomp-derived tree); `init_project.sh --base` or `RECOMP_BASE` selects it.
+Not affiliated with Nintendo. The toolchain itself (`gen.py`, `lifter.py`, runtime) comes from
+a base repo, not this one. Fetch the pinned one with:
 
-The public LASRecomp revision documented in this skill lacks the package extractor and
-inventory extensions. Select a compatible local Git base explicitly, or use `--no-extract`
-for scaffolding without dependency installation. Existing projects should continue from
-STATUS.md rather than rerun initialization. See SKILL.md for the capability checks.
+```sh
+bash scripts/fetch_base.sh   # LASRecomp @ d23597d6 → ~/.cache/recomp/bases/, prints the path
+bash scripts/init_project.sh --out ../my-game --name mygame --no-extract   # uses it automatically
+```
+
+The public LASRecomp base lacks the package extractor and inventory tools, so use
+`--no-extract` with it, or fetch an extended base with `fetch_base.sh --url <repo> --rev <sha>
+--dest <dir>` and pass `--base <dir>`. Existing projects should continue from STATUS.md
+rather than rerun initialization. See SKILL.md for the capability checks.
 
 Validate the bootstrap without game data or network access:
 
 ```sh
 python3 -m unittest discover -s tests -v
-shellcheck scripts/init_project.sh
+shellcheck scripts/*.sh
 ```
