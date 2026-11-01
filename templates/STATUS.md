@@ -13,7 +13,7 @@ Updated: <date> (session N: <machine/OS>).
 | SDK | <NintendoSDK ?.?.? from program NCA / module strings> |
 | Program NCA | `<hash>.nca` (<size> bytes) |
 
-Module build IDs (from `tools/nso.py extracted/exefs/*`):
+Full module build IDs (from the NSO parser; pass only NSO0 files, exclude main.npdm):
 
 | Module | Build ID | File size | Guest base (modules.h) |
 |---|---|---|---|
@@ -31,7 +31,7 @@ verified on.**
 
 ## Milestones
 
-- [ ] M1 — all game code recompiles to C (<n> modules, <n> functions, **0 unsupported**)
+- [ ] M1 — all required game modules generated and compiled (<n> modules, <n> functions, **0 unsupported**)
 - [ ] M2 — the runtime links and boots into the game (`nn::init::Start`, init callbacks)
 - [ ] M3 — first frame presented
 - [ ] M4 — first correct image (screenshot-proven)
@@ -52,6 +52,8 @@ verified on.**
 1.
 
 ## How to test
+
+Confirm these example interfaces exist in the pinned base before use. Keep saves isolated.
 
 - `<PREFIX>` env vars: `<PREFIX>_SHOT_AT=<frames>` screenshots → `build/frames/`;
   `<PREFIX>_INPUT="frame:BTN:dur,…"` scripted input; `<PREFIX>_WATCHDOG=<ms>` deadlock dump;

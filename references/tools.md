@@ -1,9 +1,19 @@
-# Tools & runtime: what to copy, what to adapt
+# Tools and runtime: copy versus adapt
 
-Provenance: the base is **LASRecomp** (MIT, https://github.com/peiikai/LASRecomp, commit `d23597d`),
-extended by **EoWRecomp** (MIT). Copy the whole `tools/` + `runtime/` + `Makefile` + `third_party/`
-(imgui, smaa) from a base repo — do **not** rewrite them per game. `scripts/init_project.sh` does
-the copy for you; this file explains what each piece is and which files are game-specific.
+Public lineage reference: [LASRecomp at d23597d6cba13f0e3b4797a0c813c14ef86c684c](https://github.com/peiikai/LASRecomp/tree/d23597d6cba13f0e3b4797a0c813c14ef86c684c).
+The original skill also described a local EoWRecomp extension without supplying its source
+revision. The table below describes that extension's expected interfaces, **not** the contents
+of every LASRecomp checkout. In particular the public revision lacks `nca_extract.py`,
+`inventory.py`, `nxpkg.c` and several listed diagnostics/tests. Verify paths, `--help`, license
+and behavior in the chosen base; stop or use scaffold-only mode when required tools are absent.
+
+The initializer copies tracked regular files under `tools/`, `runtime/`, `third_party/`, plus
+`Makefile` and `LICENSE`. It preserves a base README as `docs/BASE-README.md` for attribution,
+and records commit/local-change provenance in `docs/BASE.md`. It excludes untracked files,
+venvs and standard generated/build folders; inspect tracked source for other local artifacts.
+Selected symlinks and submodule entries are rejected rather than traversed. Prepare a reviewed
+checkout with vendored tracked dependencies if necessary. It does not copy base build docs;
+consult those in the original checkout. Preserve dependency licenses when adapting the scaffold.
 
 ## tools/ — the recompiler (Python; venv deps: capstone, unicorn, lz4, cryptography, pillow)
 
@@ -15,7 +25,7 @@ the copy for you; this file explains what each piece is and which files are game
 | `inventory.py` | `inventory.py <exefs> [--lift] [--simd c|asm]` → the GAP report: segments, build IDs, SDK strings, imports by exporter, NVN names vs `HLE_FUNC`/`NVN(` coverage, HOS service strings, SVCs in kernel.c, unsupported-instruction census | copy as-is |
 | `gen.py` | Code generator → `generated/<module>/<module>_NNN.c` + `_table.c`. Usage: `gen.py <name> <nso> <base-hex> <outdir> [--hle file] [--simd asm|c] [--shift N]` | copy as-is |
 | `lifter.py` | AArch64 → C. Integer/mem/flags → C; FP/SIMD → host asm or `simd_c.py` portable (AVX2/FMA). Extend here for new instructions | copy, extend |
-| `patches.py` | Address → C replacements applied at generation; **every site `expect()`s the original instruction word**. Starts empty — add only game-proven sites | adapt (empty→yours) |
+| `patches.py` | Address → C replacements applied at generation; **every site `expect()`s the original instruction word**. Inherited patches must be disabled/replaced before generation; add only game-proven sites | adapt (empty→yours) |
 | `passes.py`, `simd_c.py` | Codegen helpers + portable SIMD emitters | copy as-is |
 | `sym.py`, `symgame.py` | Guest address → module+symbol (demangled); `symgame.py <log>` resolves `<gamelib>+<off>` crash frames to `f_<addr>` → names | copy; update lib name |
 | `transients.py` | Flicker/twinkle finder across `build/frames/*.png` | copy as-is |
@@ -27,12 +37,12 @@ the copy for you; this file explains what each piece is and which files are game
 
 ## runtime/ — the Horizon + NVN replacement
 
-Copy wholesale, then adapt the listed files:
+Reuse the shared runtime, then audit game-specific hooks and adapt the listed files:
 
 | File | Role | Per game? |
 |---|---|---|
 | `rt.h` | Guest address-space window, TLS/HLE-heap/alias/game-heap layout | **adapt** (window, heap size) |
-| `modules.h` | `GAME_MODULES(X)` name:base list — rtld load order = symbol lookup order | **adapt** (from inventory) |
+| `modules.h` | `GAME_MODULES(X)` name:base list — rtld load order = symbol lookup order | **adapt** (from inventory; update Makefile gen/link module lists too) |
 | `loader.c` | NSO decompress + relocate + import binding (host HLE → guest syms → stub) | adapt (module list) |
 | `main.c` | rtld's job: `nn::init::Start` + init callbacks; `main.npdm` thread config | adapt (Start signature/SDK) |
 | `dispatch.c` | Guest addr → recompiled fn (binary search + per-thread cache), `HLE_FUNC` registry, `guest_call`, backtraces/watchpoints | copy as-is |

@@ -1,13 +1,14 @@
 # The recompilation pipeline, stage by stage
 
 Adapted from EoWRecomp's `docs/ARCHITECTURE.md` + `docs/STATUS.md`. Commands assume the layout
-`init_project.sh` produces (`tools/venv` created, `extracted/` untracked, project root = cwd).
+`init_project.sh` produces (`tools/venv` created during extraction, `extracted/` untracked, project root = cwd).
+These are extension-specific interfaces: confirm them against the pinned base before use.
 Substitute your own env-var prefix for `EOWRECOMP_` and your binary name for `eowrecomp`.
 
 Overall shape:
 
 ```
-package (.nsp/.xci) ─extract─> extracted/exefs (NSOs + main.npdm) + extracted/romfs*
+package (.nsp/.nca) ─extract─> extracted/exefs (NSOs + main.npdm) + extracted/romfs*
 exefs/<module> ─tools/gen.py─> generated/<module>/*.c ─clang─> <game>.{so,dll,dylib}
 runtime ─> reserves guest address window, loads NSOs, relocates, dlopen(<game>lib) ─> nn::init::Start
 ```
@@ -16,18 +17,20 @@ runtime ─> reserves guest address window, loads NSOs, relocates, dlopen(<game>
 
 ## Stage 0 — legal setup (do this before anything else)
 
-- Ask the user where their package and `prod.keys` live. They must be **outside the new repo** —
-  e.g. `~/Games/dumps/`, never `repo/dumps/`. Open read-only; never copy in.
-- If you can't find them, **ask**. Do not search the web, do not suggest how to obtain them.
+- Ask the user where their package and `prod.keys` live: outside the new repo (e.g.
+  `~/Games/dumps/`) or in its git-ignored `input/` folder. Open them read-only.
+- If you can't find them, ask the user for the path.
 - Scaffold the repo and install the `.gitignore` (`templates/gitignore`) **before the first
-  commit**. Verify with `git status --ignored` — dumps, keys, `extracted/`, `generated/` ignored.
+  commit**. Verify both `git check-ignore` on output paths and `git ls-files` — ignore rules do not untrack files.
 - Package formats:
-  - `.nsp` / `.nca` — `nca_extract.py` reads in place, nothing copied out.
-  - `.nsz` — decompress first: `nsz -D --keys <prod.keys> game.nsz` (needs keys even to decompress).
-  - `.xci` — `nca_extract.py` does **not** read XCI containers: extract the program NCA first
-    (`hactool game.xci`, secure partition), then point the tool at the `.nca`. Note: program NCAs
-    with a rights ID (titlekey crypto, e.g. digital/eShop-only titles) are **not supported** by the
-    tool — cart XCI/NSP program NCAs use the key area and work.
+  - `.nsp` / `.nca` — `nca_extract.py` reads the container in place and writes local extracted outputs.
+  - `.xci` and compressed `.nsz`/`.xcz`/`.ncz` — the bootstrap hands them to the extractor too;
+    its `--info` pass confirms support first. If the selected extractor lacks a format, convert
+    the package with a tool that has it (check that tool's help and output paths first).
+  - Inspect the extractor's support for rights-ID/titlekey crypto, key generations and update
+    dependencies. Do not assume NSP implies key-area encryption or that a standalone update
+    contains a complete base game. Unsupported crypto/storage is a blocker, not a reason to
+    guess keys or mix modules from different builds.
 
 ## Stage 1 — pin exactly one build
 
@@ -38,29 +41,33 @@ valid for one set of module build IDs only.
   `docs/STATUS.md`: title ID, display version, SDK version, program-NCA name/size.
 - `nca_extract.py --info` prints `title <id>`, `content type`, `sdk`, `key generation`, and each
   section's fs/hash/encryption/compression. If the title ID isn't what you intended — stop.
-- **Truncated packages fail late**: the ExeFS and the RomFS compression table sit at the *end* of
-  the program NCA. Check the file size against expectations first; the extractor refuses short
-  files, but an incomplete copy wastes hours. (Real case: a 5.64 GB copy of a 5.81 GB NSP.)
+- Validate container entry bounds, section offsets/sizes and available hashes before extraction.
+  File size alone does not establish integrity; do not assume ExeFS or RomFS tables occupy a
+  fixed position in every NCA. Stop on short reads, hash failures or decompression errors.
 
 ## Stage 2 — extract
 
 ```
-tools/venv/bin/python -I tools/nca_extract.py <prod.keys> <game.nsp|program.nca> extracted \
+tools/venv/bin/python -E -s tools/nca_extract.py <prod.keys> <game.nsp|program.nca> extracted \
     --no-romfs --romfs-src
 ```
 
 - Writes `extracted/exefs/` (the NSOs + `main.npdm`) and `extracted/romfs.src` — a small descriptor
   that lets the runtime read/decrypt/decompress RomFS straight from the package. Alternatives:
   `--romfs-image` (one `romfs.bin`, can be 8+ GB) or a full `extracted/romfs/` tree (no flags).
-- Gate: `exefs/` contains at least `main`, `main.npdm`, `rtld`; typically `sdk` and `subsdk*`.
+- Gate: `exefs/` contains `main` and `main.npdm`, plus the modules required by this build.
+  `sdk`, `subsdk*` and `rtld` depend on its layout; inventory what is present rather than assuming
+  a fixed set. The runtime may replace rtld startup rather than lift it.
   If an NSO's LZ4 segments won't decompress or the NCA isn't NCA3 — stop, fix extraction first.
 
 ## Stage 3 — module inventory (measure, don't guess)
 
 ```
-tools/venv/bin/python -I tools/nso.py extracted/exefs/*        # per-module: build id, image size, imports/exports
-tools/venv/bin/python -I tools/analyze.py extracted/exefs/main --census
-tools/venv/bin/python -I tools/inventory.py extracted/exefs --lift > docs/GAP.md
+# Pass only NSO0 modules to nso.py, never main.npdm or arbitrary ExeFS files.
+# Example after confirming these modules exist:
+tools/venv/bin/python -E -s tools/nso.py extracted/exefs/main extracted/exefs/sdk
+tools/venv/bin/python -E -s tools/analyze.py extracted/exefs/main --census
+tools/venv/bin/python -E -s tools/inventory.py extracted/exefs --lift > docs/GAP.md
 ```
 
 You learn: each module's build ID and image size (→ guest base addresses and spans), which module
@@ -74,7 +81,15 @@ Then adapt the address layout in **`runtime/modules.h`** — order is rtld's loa
 window (`0x7000000000`–`0x7320000000` in EoWRecomp) and heap region — size the heap for the game.
 Android/ASLR-constrained ports may need `GUEST_SHIFT` / `gen.py --shift`.
 
-Write the module table (name / build ID / file size) into `docs/STATUS.md` — it is the authority
+Update Makefile `gen` recipes and generated-source/link lists for **every** loaded module;
+the reference LASRecomp Makefile generates only main/sdk. Audit inherited patches and HLE
+registrations before generation; do not assume copying resets them.
+
+The public reference `nso.py` CLI displays only a build-ID prefix. The initializer prepends
+full 32-byte IDs from the NSO headers to `docs/modules.txt`; use those or read all 32 bytes
+at header offset `0x40` directly. Do not pin a truncated CLI prefix.
+
+Write the module table (name / full build ID / file size) into `docs/STATUS.md` — it is the authority
 for "which build these addresses are for".
 
 ## Stage 4 — M1: all game code recompiles to C
@@ -92,7 +107,7 @@ make gen        # per module: gen.py <name> extracted/exefs/<name> <base> genera
 - `lifter.py` turns AArch64 into C: integers/memory/flags become C; FP/SIMD becomes host ARM64
   inline asm (`--simd asm`) or portable C requiring AVX2+FMA (`--simd c`, compile generated code
   with `-march=x86-64-v3` — with zig's clang spell it `-mcpu=x86_64_v3`).
-- **Gate: 0 `Unsupported`.** Every unsupported encoding is implemented in `lifter.py` — not stubbed
+- **Gate: every required module generated and compiled, 0 `Unsupported`.** Every unsupported encoding is implemented in `lifter.py` — not stubbed
   — and tested: `tools/test_lift.py <nso> <base>` (differential vs Unicorn) or `--synth` on machines
   without the game files. Common gaps on newer SDKs: exclusive **pairs** (LDXP/STXP/LDAXP/STLXP) and
   LSE atomics (CAS/CASP/SWP/LDADD…) — the `sdk` uses them even when `main` doesn't. Cross-check
@@ -104,7 +119,8 @@ make gen        # per module: gen.py <name> extracted/exefs/<name> <base> genera
 
 - **Loader**: `loader.c` decompresses each NSO into its guest base, applies RELA/JMPREL relocs.
   Imports resolve host-HLE first (`HLE_FUNC("symbol")` registered via a linker section in
-  `dispatch.c`), then guest exports; leftovers become "UNIMPLEMENTED" stubs that log and return 0.
+  `dispatch.c`), then guest exports. Some bases leave "UNIMPLEMENTED" stubs that log and return 0:
+  inventory these and resolve or justify every exercised stub; a success return is not verification.
 - **Start**: `main.c` does rtld's job — calls `nn::init::Start` in `sdk` with callbacks that run
   each module's `DT_INIT`/`init_array`. **The `Start` signature varies by SDK version** (EoWRecomp:
   3 callbacks on SDK 16.2). Main-thread priority/stack come from `main.npdm`.
@@ -140,9 +156,12 @@ Verify with frame captures and the Maxwell fuzz harness (`test_translate.sh`); s
   Engine-specific HLE (heaps, frame pacing) is per-game work: find addresses, patch via
   `patches.py` + `expect()`.
 
-## The verification loop (use constantly)
+## The verification loop
 
-- `tools/run.sh` — timed run (SECS=N), scratch save dir, log to `build/run.log`, then prints a
+The following variables/scripts are examples from the local extension; discover what the
+selected base actually implements before invoking them. Use an isolated save directory.
+
+- `tools/run.sh` (if present) — timed run (SECS=N), scratch save dir, log to `build/run.log`, then prints a
   **symbolized guest stack** via `symgame.py` (`<game>lib.so+<off>` → `f_<addr>` → `nm`/`sym.py`
   demangled name). Keep `game_slot.sh`'s memory gate if you run parallel copies — each instance
   can take ~2 GB+.
@@ -164,7 +183,8 @@ Verify with frame captures and the Maxwell fuzz harness (`test_translate.sh`); s
 
 - `runtime/modules.h` bases/spans (from the inventory), `runtime/rt.h` window/heap sizes.
 - `GetInfo` title ID, `main.npdm` handling if the game needs different thread config.
-- `tools/patches.py` — starts **empty**; add sites only after root-causing, always via `expect()`.
+- `tools/patches.py` — audit and disable inherited game-specific patches/HLE registrations first;
+  add new sites only after root-causing, with build-ID guards and `expect()` checks.
 - `runtime/hle/` engine specifics (heaps/input/framepace/bindings) — addresses differ per game.
 - Services/NVN gaps from `docs/GAP.md`, in the order the game's log actually hits them.
 - Rename pass: binary name, game-lib name, `.ini` name, and the env-var prefix — mechanical but

@@ -19,6 +19,9 @@ extracted/
 input/
 generated/
 generated-*/
+# descriptors and images remain private even if moved out of extracted/
+romfs.src
+romfs.bin
 # Nintendo fonts (users import their own; only the README ships)
 /fonts/*
 !/fonts/README.md

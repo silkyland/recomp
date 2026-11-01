@@ -1,90 +1,110 @@
 ---
 name: recomp
 description: >-
-  Bootstrap or continue a Nintendo Switch static-recompilation project for a NEW game: the game's
-  ARM64 is lifted to C at build time and a runtime replaces Horizon OS (SVCs, IPC services) and the
-  NVN graphics API — the EoWRecomp/LASRecomp pipeline. Use when the user runs /recomp <package>,
-  says "recomp <game file>", or asks to recompile a Switch game / start a new recomp project from
-  an NSP/XCI/NCZ/NCA dump. Requires the user's own legally dumped package and prod.keys — they stay
-  OUTSIDE the repo and are never committed, copied, or fetched.
-argument-hint: "<game.nsp|xci|nca> [new-project-dir]"
+  Bootstrap or continue a Nintendo Switch static-recompilation project using a local
+  LASRecomp-derived toolchain and Horizon/NVN runtime. Use for /recomp, recompiling a
+  user's Switch game dump, or continuing an existing recomp project. Works from the user's
+  own package and keys, kept outside the repository or in its ignored input/ folder.
 ---
 
-# /recomp — Switch static recompilation pipeline
+# Switch static recompilation
 
-Not an emulator: `game NSO (AArch64) -> tools/gen.py + lifter.py -> generated/*.c -> <game>lib.so`
-plus a runtime (`runtime/`) that emulates Horizon kernel SVCs, HIPC/TIPC services and reimplements
-NVN on Vulkan/Metal. This skill walks a new game through the same stages EoWRecomp uses.
+Goal: lift one pinned game's AArch64 modules to C at build time and adapt a native runtime
+that replaces Horizon services and NVN. This is a per-game engineering project, not an
+automatic converter; a successful scaffold does not establish playability.
 
-## Usage
+## Start or continue
 
+For a **new project**, obtain the paths to the user's own package, keys, target directory,
+and a trusted local base checkout. Ask for any missing paths (paths only; keys stay in their file).
+
+```sh
+bash scripts/init_project.sh --pkg /external/game.nsp --keys /external/prod.keys \
+  --out /work/new-game --base /work/compatible-base --name newgame
 ```
-/recomp <game.nsp|game.xci|program.nca> [new-project-dir] [--keys <prod.keys>] [--base <recomp-repo>]
-```
 
-On invocation, the agent:
-1. Confirms the legal prerequisites below (ask if keys/package location is unknown — never search
-   the web for them).
-2. Picks or confirms a **base recomp repo** to copy tools+runtime from (see "Base repo" below).
-3. Runs `scripts/init_project.sh` to scaffold the project, extract, and inventory the dump.
-4. Walks the milestone gates in `references/pipeline.md` one at a time, updating `docs/STATUS.md`.
+Resolve the script relative to this skill's directory. It accepts `.nsp`, program `.nca`, `.xci`
+and compressed `.nsz`/`.xcz`/`.ncz`, handing each to the base extractor, whose `--info` pass
+confirms support before anything is extracted. Check the extractor's `--help` for its formats; if
+it lacks one, convert the package with a tool that has it. `--romfs` accepts `src` (default),
+`image`, `tree`, or `none`. Package and keys may sit outside the project or in its ignored `input/`.
 
-## Legal rules — non-negotiable, recite to the user once
+- `--no-extract`: scaffold only; no venv, pip, extraction or inventory, and `--pkg`/`--keys` become
+  optional. Useful to inspect a base that lacks the extraction extensions.
+- `--no-copy`: retain existing project sources/templates; append missing ignore rules. Extraction
+  requires an empty `extracted/` directory to avoid mixing builds. Never erase it automatically.
+- `RECOMP_BASE` supplies the base when `--base` is absent. There is no automatic base search.
+- Dependencies come from the base's `tools/requirements.txt` when present (prefer a pinned one),
+  else an unpinned default set. Installation needs network access; a failed install is retried
+  on the next run rather than silently skipped.
 
-- The game package and `prod.keys` must come from the user's own console/dump. They live in a
-  folder **outside the repository**, opened **read-only**. Never copy them into the repo.
-- Never commit: packages, keys, `extracted/`, `generated/`, or any game asset/code — not even one
-  file "for a test". Install `templates/gitignore` first; verify with `git status --ignored`.
-- `extracted/romfs.src` embeds the package path **and decryption keys** — `extracted/` must stay
-  untracked and machine-local.
-- Do not provide or suggest sources for obtaining dumps or keys. Screenshots of the running game
-  (for docs) are the only game-derived files allowed in the repo.
+For an **existing project**, read its agent rules, `docs/STATUS.md`, build configuration and
+current changes first. Continue the next unproven milestone. Do not rerun initialization,
+replace its runtime, discard patches, or reinstall dependencies just because this skill loaded.
 
-## Prerequisites checklist (gate — stop and ask if missing)
+## Data boundaries
 
-- [ ] A dump of the user's own game: `.nsp` (read in place), `.nsz` (decompress with `nsz -D` first),
-      program `.nca`, or `.xci` (needs hactool to extract the program NCA first).
-- [ ] The user's own `prod.keys` (needs `header_key`, `key_area_key_application_XX`, `aes_kek`/… —
-      `nca_extract.py` errors name what's missing).
-- [ ] A base recomp repo to copy from: EoWRecomp or LASRecomp (both MIT). `silkyland/recomp` was
-      checked on 2026-11 and **does not exist** — if the user created it since, prefer it as base.
-- [ ] Python 3 + venv deps: capstone, unicorn, lz4, cryptography, pillow (`scripts/init_project.sh`
-      creates `tools/venv`). Host deps for the runtime: clang, SDL3, FFmpeg, shaderc, Vulkan.
-- [ ] ~20–80 GB free disk (RomFS trees and generated C are large; generated code ~900 MB for a
-      40 MB .text game).
+- Use the user's own dumps and keys. Keep them outside the repository or in its ignored `input/`
+  folder, opened read-only with their permissions unchanged.
+- Extraction and generation outputs are machine-local and ignored. They contain game code/assets,
+  so keep them out of commits and releases. `extracted/romfs.src` embeds keys and absolute package
+  paths: keep it private, and log key names rather than values.
+- Install ignore rules before extraction. `.gitignore` does not protect already tracked files;
+  inspect `git ls-files` and use `git check-ignore` on actual output paths before a commit.
+  Screenshots of the running game may be committed to document progress.
+- Preserve the base's license and third-party notices.
 
-## Pipeline — one gate at a time (detail: `references/pipeline.md`)
+## Verify the base before executing its tools
 
-| Stage | Gate to pass before moving on |
+Use [references/tools.md](references/tools.md) to classify copied versus game-specific files.
+Record the base revision and local modifications (`docs/BASE.md` from the initializer), inspect
+its license, CLI help and build rules. Local scripts and Makefiles execute with user permissions.
+The initializer copies tracked source files from a Git checkout; it rejects selected symlinks,
+missing tracked files and submodule entries. Untracked additions are not copied.
+
+**LASRecomp is a lineage reference, not a guaranteed extraction-capable base.** At verified
+revision `d23597d6cba13f0e3b4797a0c813c14ef86c684c`, it has `nso.py`, `gen.py` and the runtime,
+but lacks `nca_extract.py` and `inventory.py`. The package workflow below needs a compatible
+extended checkout providing both. No public EoWRecomp source revision was supplied with this
+skill; treat its detailed commands, diagnostic variables and failure stories as examples until
+confirmed in the selected checkout. Do not invent a repository URL or missing tool.
+
+## Milestone gates
+
+Read [references/pipeline.md](references/pipeline.md) for commands and adaptation details.
+
+| Stage | Evidence required |
 |---|---|
-| 0. Legal setup | dumps/keys outside repo; `.gitignore` installed; `git status --ignored` clean |
-| 1. Pin one build | one title ID + version recorded; module **build IDs** in STATUS.md — all patch/HLE addresses are per-build-ID |
-| 2. Extract | `nca_extract.py --info` shows NCA3 / content type 0; `extracted/exefs/` has `main`, `sdk`, `subsdk*`, `rtld`, `main.npdm`. **Stop if the package is truncated or the NSO won't decompress** |
-| 3. Inventory | `inventory.py extracted/exefs [--lift]` → `docs/GAP.md`: module sizes, imports by exporting module, NVN coverage, services, SVCs, unsupported instructions |
-| 4. M1 generate | `make gen` finishes with **0 `Unsupported`** — never work around: implement in `lifter.py`, test against Unicorn |
-| 5. M2/M3 boot | runtime loads modules, `nn::init::Start` runs, services answer, **first frame presented** |
-| 6. M4 image | first **correct** image — verified by screenshot, never by "should work" |
-| 7. M5–M7 | title/input/first playable scene → full playthrough+saves → PC features |
+| Setup | External inputs; ignored, private outputs; trusted compatible base pinned |
+| Pin build | Title/version and **full module build IDs** recorded; never mix base/update files without verified support |
+| Extract | Correct program NCA selected; required modules and metadata present; NSO parsing/decompression succeeds |
+| Inventory | Measured image spans, imports, NVN/service/SVC gaps; census every loaded module |
+| M1 | All required modules generated and compiled; zero unsupported encodings; lifter tests pass |
+| M2/M3 | Runtime initializes modules and services; first frame presented |
+| M4 | First correct image checked against a known reference |
+| M5 | Title, audio, input and first controllable scene verified |
+| M6 | Full playthrough, save/load round-trip and performance evidence |
+| M7 | Only requested PC features, verified independently |
 
-## Working rules (from the reference project's CLAUDE.md)
+Before generation, reconcile **both** Makefile generation/link module lists and runtime module
+layout; remove or disable inherited game-specific patch/HLE registrations deliberately. A copied
+`patches.py` is not empty, and matching an instruction word alone does not validate a foreign patch.
 
-- **Generated code is never edited by hand** — fix `gen.py`/`lifter.py`/`patches.py` and regenerate.
-- Every patch checks the original instruction word first (`expect()` in `patches.py`); a mismatch
-  means wrong build, not a patch to force.
-- A fix is only verified when **seen working** (screenshot, log line, or test). Measure with tools
-  (`nso.py`, `analyze.py --census`, `inventory.py`), don't estimate.
-- Debug env vars use a per-project prefix (`EOWRECOMP_*` in the reference). Watchdog +
-  symbolized guest stacks are the deadlock/freeze toolkit — see `references/hard-parts.md`.
-- Advance by milestones; the current milestone must be proven before starting the next.
+## Working rules
 
-## Bundled files
+- Never hand-edit generated C; fix the generator, lifter or source patch definitions.
+- Bind patches/HLE addresses to full build IDs and check original instruction bytes (`expect()` or
+  equivalent). Stop on mismatch. Add differential lifter tests; compare hardware where the oracle
+  itself is uncertain. Zero unsupported encodings is necessary, not proof of correct lifting.
+- An unresolved import or service stub returning success can hide incorrect behavior. Track stubs,
+  and implement or explicitly justify those on the exercised path before advancing a milestone.
+- Use measured evidence: command exit status, tests, logs, screenshots and save round-trips.
+  State which host/GPU backend was tested. Never infer playability from generation or a black frame.
+- Consult [references/hard-parts.md](references/hard-parts.md) when investigating synchronization,
+  shader or memory-layout failures; verify each proposed mechanism against the selected code.
+- Update `docs/STATUS.md` with evidence, blockers and the next step. If blocked, report the exact
+  missing input/capability rather than claiming a milestone passed.
 
-- `scripts/init_project.sh` — scaffolds a project: copies tools+runtime from a base repo, builds
-  the venv, runs extraction + inventory, writes `docs/STATUS.md`/`GAP.md` skeletons.
-- `references/pipeline.md` — detailed stage-by-stage walkthrough with commands and decision gates.
-- `references/tools.md` — which tools/runtime files to copy verbatim vs adapt per game, and where
-  they came from (LASRecomp → EoWRecomp).
-- `references/hard-parts.md` — known hard parts: Horizon mutex/condvar semantics, guest deadlocks,
-  Maxwell shader translation, memory layout/GUEST_SHIFT, per-build versioning.
-- `templates/` — `CLAUDE.md` (project rules), `STATUS.md` (M1–M7 tracker), `gitignore` (dumps/keys/
-  extracted/generated) for the new project.
+The initializer also installs `templates/gitignore`, `templates/STATUS.md`, and the project rules
+as `AGENTS.md` (with `<PROJECT>` filled from `--name`) plus a `CLAUDE.md` that imports it, each
+only when absent. Fill the remaining placeholders after pinning the build.

@@ -1,7 +1,9 @@
 # Known hard parts
 
 Distilled from EoWRecomp's `docs/STATUS.md` and `docs/HANDOFF-freeze.md` — the bugs that cost real
-sessions, and the tools that cracked them. Substitute your env-var prefix for `EOWRECOMP_`.
+sessions, and the tools reported to have cracked them. The source revision for these local
+reports was not supplied: treat them as investigation leads, not verified universal behavior.
+Confirm constants, flags, structures and semantics in the pinned base and relevant source. Substitute your env-var prefix for `EOWRECOMP_`.
 
 ## 1. Horizon mutex/condvar semantics (SVC layer) — the #1 source of freezes
 
@@ -41,7 +43,9 @@ to GLSL, then compiled to SPIR-V with shaderc (disk-cached). Each miscompile is 
 - **Register-index clobbering**: `LDC.64 c[idx][Ra+imm]` emitted two loads re-reading `Ra`; when
   `Rd == Ra` the first write corrupted the index → garbage offset → stretched triangles (a dark
   vertical band from a skinned character — the second bone's matrix row). Save the index first.
-- **`FLO` semantics** (find-lowest-one, `.SH`/`.INV` forms): wrong result made a per-light loop
+- **`FLO` semantics** (`.SH`/`.INV` forms): verify bit-scan direction, result encoding
+  and signed/inverted edge cases from the instruction implementation; do not infer them from
+  the mnemonic. A wrong result made a per-light loop
   over-iterate → the dominant fullscreen pass cost. FLO's edge cases (no bit set) matter.
 - Structured loops in shader control flow need real structuring, not naive labels.
 - Newer NVN compute shaders have a **0x100-byte header** before code — check before decoding.
@@ -54,7 +58,7 @@ to GLSL, then compiled to SPIR-V with shaderc (disk-cached). Each miscompile is 
 
 ## 4. Memory layout / `GUEST_SHIFT`
 
-- Guest addresses **are** host addresses: the runtime reserves a fixed window
+- Guest addresses **are** host addresses: the example runtime reserves a fixed window
   (`0x7000000000`–`0x7320000000` in EoWRecomp) at process start and re-execs if it's taken. `LD64`
   is a plain pointer dereference — fast, but means layout bugs are immediate memory corruption.
 - `main`'s image can exceed its slot: pick `modules.h` spans from *measured* image sizes
@@ -88,11 +92,13 @@ to GLSL, then compiled to SPIR-V with shaderc (disk-cached). Each miscompile is 
 
 ## 7. Extraction gotchas
 
-- `nca_extract.py` exists because hactool can't read RomFS sections stored through the BucketTree
+- `nca_extract.py` exists because the local extension reportedly needed to read RomFS sections stored through the BucketTree
   compression layer (LZ4 blocks, firmware 12+). Layout: AES-CTR section → IVFC/SHA-256 hash layers →
   CompressedStorage → RomFS/PFS0; compression table offsets are relative to the hash layers' data
   region. Atmosphere's `fssystem` + Switchbrew's NCA page are the references.
-- Truncated package = ExeFS/RomFS table missing (both at the **end** of the NCA). Verify size first.
-- Rights-ID NCAs (titlekey crypto) unsupported — cart program NCAs use the key area.
+- Check container bounds, section sizes, hashes and decompression results. Truncation may fail
+  at different stages; ExeFS/RomFS placement is container-specific.
+- Rights-ID/titlekey crypto support depends on the extractor. Determine it from the selected
+  implementation; the package format alone does not establish the encryption mode.
 - `romfs.src` embeds the absolute package path + section keys → `extracted/` is machine-local and
   must never be committed (also why it can't be shared between machines).
