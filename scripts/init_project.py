@@ -137,6 +137,17 @@ def extract(out, package, keys, romfs):
     # -E -s ignores PYTHON* and user site packages while retaining sibling-tool imports.
     command = [python, '-E', '-s', 'tools/nca_extract.py', keys, package, 'extracted']
     run(command + ['--info'], cwd=out)
+    # Extractors differ: some write romfs.src themselves, others leave that to the runtime's setup.
+    usage = subprocess.run([str(python), '-E', '-s', 'tools/nca_extract.py', '--help'], cwd=out,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True).stdout
+    has_src = '--romfs-src' in usage
+    if romfs == 'auto':
+        romfs = 'src' if has_src else 'none'
+        if not has_src:
+            print('init_project: extractor has no --romfs-src; extracting ExeFS only. Serve RomFS via '
+                  'the runtime setup (if the base has one) or rerun with --romfs image/tree.', file=sys.stderr)
+    elif romfs == 'src' and not has_src:
+        fail('this base extractor has no --romfs-src; use --romfs auto, image, tree or none')
     flags = {'src': ['--no-romfs', '--romfs-src'], 'image': ['--no-romfs', '--romfs-image'],
              'none': ['--no-romfs'], 'tree': []}[romfs]
     run(command + flags, cwd=out)
@@ -191,7 +202,8 @@ def main():
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--base', type=Path, default=os.environ.get('RECOMP_BASE') or None)
     parser.add_argument('--name', default='game', help='short binary name: letters, digits, underscore, hyphen')
-    parser.add_argument('--romfs', choices=('src', 'image', 'tree', 'none'), default='src')
+    parser.add_argument('--romfs', choices=('auto', 'src', 'image', 'tree', 'none'), default='auto',
+                        help='auto: romfs.src if the extractor supports it, else ExeFS only')
     parser.add_argument('--no-copy', action='store_true', help='resume without replacing project source files')
     parser.add_argument('--no-extract', action='store_true', help='scaffold only; no venv or dependency installation')
     args = parser.parse_args()

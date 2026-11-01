@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Fetch the pinned recomp base checkout to a known location and print its path.
 
-The default is the public LASRecomp revision this skill was verified against. It provides the
-lifter, generator and runtime but not the package extractor, so pair it with
-`init_project --no-extract` unless --url/--rev select an extended base that has
-tools/nca_extract.py and tools/inventory.py.
+The default is EoWRecomp (MIT, a LASRecomp derivative) at a verified revision: it provides the
+lifter, generator, runtime and the package extractor/inventory tools. The upstream LASRecomp
+(--url https://github.com/peiikai/LASRecomp.git --rev d23597d6cba13f0e3b4797a0c813c14ef86c684c)
+lacks the extractor, so pair it with `init_project --no-extract`.
 """
 import argparse
 import os
@@ -12,8 +12,9 @@ from pathlib import Path
 import subprocess
 import sys
 
-URL = 'https://github.com/peiikai/LASRecomp.git'
-REV = 'd23597d6cba13f0e3b4797a0c813c14ef86c684c'
+URL = 'https://github.com/Nycolazs/EoWRecomp.git'
+REV = 'dd9c79d6c01d9eaddafc1fc5a07b6658bfc56505'
+NAME = 'EoWRecomp'
 REQUIRED = ('tools/nso.py', 'tools/gen.py', 'tools/lifter.py', 'runtime/rt.h', 'Makefile', 'LICENSE')
 EXTRACTION = ('tools/nca_extract.py', 'tools/inventory.py')
 
@@ -24,7 +25,7 @@ def cache_root():
 
 def default_dest(rev=REV):
     """Where the pinned base lives; init_project falls back to it when --base is absent."""
-    return cache_root() / f'LASRecomp-{rev[:12]}'
+    return cache_root() / f'{NAME}-{rev[:12]}'
 
 
 def git(*args, **kwargs):

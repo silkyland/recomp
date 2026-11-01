@@ -39,9 +39,12 @@ print(VALUE)
             'tools/helper.py': 'VALUE = "module report"\n',
             'tools/inventory.py': 'from helper import VALUE\nprint("gap " + VALUE)\n',
             'tools/nca_extract.py': '''import pathlib, sys
-if '--info' not in sys.argv:
+if '--help' in sys.argv:
+    print('usage: nca_extract.py keys nca outdir [--no-romfs] [--romfs-src] [--romfs-image] [--info]')
+elif '--info' not in sys.argv:
     p = pathlib.Path(sys.argv[3]) / 'exefs'
     p.mkdir(parents=True)
+    (p.parent / 'flags').write_text(' '.join(sys.argv[4:]))
     (p / 'main').write_bytes(b'NSO0' + bytes(0x3c) + bytes(range(32)) + bytes(0xa0))
     (p / 'sdk').write_bytes(b'NSO0' + bytes(0x3c) + bytes(range(32)) + bytes(0xa0))
     (p / 'main.npdm').write_bytes(b'META-not-an-NSO')
@@ -295,6 +298,35 @@ if '--info' not in sys.argv:
         self.assertTrue(agents.startswith('# mygame'))
         self.assertNotIn('<PROJECT>', agents)
         self.assertIn('/mygame.ini', (self.out / '.gitignore').read_text())
+
+    def without_romfs_src(self):
+        # Like EoWRecomp's extractor: no --romfs-src (its runtime setup writes romfs.src instead).
+        tool = self.out / 'tools/nca_extract.py'
+        tool.write_text(tool.read_text().replace(' [--romfs-src]', ''))
+
+    def test_auto_romfs_falls_back_to_exefs_only_without_romfs_src(self):
+        self.scaffold()
+        self.interpreter()
+        self.without_romfs_src()
+        result = self.invoke('--no-copy')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.out / 'extracted/flags').read_text(), '--no-romfs')
+        self.assertIn('ExeFS only', result.stderr)
+
+    def test_explicit_romfs_src_without_support_fails_before_extraction(self):
+        self.scaffold()
+        self.interpreter()
+        self.without_romfs_src()
+        result = self.invoke('--no-copy', '--romfs', 'src')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.out / 'extracted/exefs').exists())
+
+    def test_auto_romfs_uses_romfs_src_when_supported(self):
+        self.scaffold()
+        self.interpreter()
+        result = self.invoke('--no-copy')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.out / 'extracted/flags').read_text(), '--no-romfs --romfs-src')
 
     def add_generator_files(self):
         for name in ('tools/gen.py', 'tools/lifter.py'):

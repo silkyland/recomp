@@ -19,28 +19,29 @@ For a **new project**, obtain the paths to the user's own package, keys and targ
 Ask for any missing paths (paths only; keys stay in their file). Then, from this skill's directory:
 
 ```sh
-# 1. Fetch the base toolchain (gen.py, lifter.py, runtime). Pinned, idempotent, prints its path.
+# 1. Fetch the pinned base toolchain (EoWRecomp: gen.py, lifter.py, runtime, nca_extract.py, inventory.py).
 bash scripts/fetch_base.sh
-# 2. Scaffold. Without --base it uses the base fetched in step 1.
-bash scripts/init_project.sh --out /work/new-game --name newgame --no-extract
-# 2b. With an extended base that has the extractor, extract in the same step instead:
+# 2. Scaffold, extract ExeFS, and generate module/gap reports (uses the fetched base automatically).
 bash scripts/init_project.sh --pkg /external/game.nsp --keys /external/prod.keys \
-  --out /work/new-game --base /work/extended-base --name newgame
+  --out /work/new-game --name newgame
 ```
 
-`fetch_base.sh` clones [LASRecomp](https://github.com/peiikai/LASRecomp) at the verified commit
-`d23597d6cba13f0e3b4797a0c813c14ef86c684c` into `$XDG_CACHE_HOME/recomp/bases/` (default
-`~/.cache/...`). That base has **no extractor** (`nca_extract.py`, `inventory.py`), so with it use
-`--no-extract`, then extract ExeFS with any tool the user has and place the NSOs in
-`extracted/exefs/`. For an extended base, run `fetch_base.sh --url <repo> --rev <full-sha> --dest <dir>`
-and pass that path as `--base`. Base selection order: `--base`, then `RECOMP_BASE`, then the
-fetched default.
+`fetch_base.sh` clones [EoWRecomp](https://github.com/Nycolazs/EoWRecomp) (MIT, a LASRecomp
+derivative) at the verified commit `dd9c79d6c01d9eaddafc1fc5a07b6658bfc56505` into
+`$XDG_CACHE_HOME/recomp/bases/` (default `~/.cache/...`). It includes `nca_extract.py` and
+`inventory.py`, so `init_project.sh` can extract and inventory in one step. For a different base
+(e.g. upstream [LASRecomp](https://github.com/peiikai/LASRecomp) at
+`d23597d6cba13f0e3b4797a0c813c14ef86c684c`, which lacks the extractor), run `fetch_base.sh --url
+<repo> --rev <full-sha> --dest <dir>` and pass `--base <dir> --no-extract`. Base selection order:
+`--base`, then `RECOMP_BASE`, then the fetched default.
 
 Resolve the script relative to this skill's directory. It accepts `.nsp`, program `.nca`, `.xci`
 and compressed `.nsz`/`.xcz`/`.ncz`, handing each to the base extractor, whose `--info` pass
 confirms support before anything is extracted. Check the extractor's `--help` for its formats; if
-it lacks one, convert the package with a tool that has it. `--romfs` accepts `src` (default),
-`image`, `tree`, or `none`. Package and keys may sit outside the project or in its ignored `input/`.
+it lacks one, convert the package with a tool that has it. `--romfs` accepts `auto` (default:
+`--romfs-src` if the extractor supports it, else ExeFS only so the runtime setup or a later
+`--romfs image`/`tree` run handles RomFS), `src`, `image`, `tree`, or `none`. Package and keys may
+sit outside the project or in its ignored `input/`.
 
 - `--no-extract`: scaffold only; no venv, pip, extraction or inventory, and `--pkg`/`--keys` become
   optional. Useful to inspect a base that lacks the extraction extensions.
@@ -76,12 +77,14 @@ its license, CLI help and build rules. Local scripts and Makefiles execute with 
 The initializer copies tracked source files from a Git checkout; it rejects selected symlinks,
 missing tracked files and submodule entries. Untracked additions are not copied.
 
-**LASRecomp is a lineage reference, not a guaranteed extraction-capable base.** At verified
-revision `d23597d6cba13f0e3b4797a0c813c14ef86c684c`, it has `nso.py`, `gen.py` and the runtime,
-but lacks `nca_extract.py` and `inventory.py` (upstream `main` still lacked both as of 2026-10-29).
-The package workflow needs a compatible extended checkout providing both. No public EoWRecomp source revision was supplied with this
-skill; treat its detailed commands, diagnostic variables and failure stories as examples until
-confirmed in the selected checkout. Do not invent a repository URL or missing tool.
+**Default base versus upstream LASRecomp.** The default pinned base is
+[EoWRecomp](https://github.com/Nycolazs/EoWRecomp) at `dd9c79d6c01d9eaddafc1fc5a07b6658bfc56505`,
+which includes `nso.py`, `gen.py`, `lifter.py`, the runtime, `nca_extract.py`, and `inventory.py`
+(note: its `nca_extract.py` extracts ExeFS, `romfs/` or `romfs.bin`, while `romfs.src` is written
+by its runtime's `nxpkg.c` setup). Upstream [LASRecomp](https://github.com/peiikai/LASRecomp) at
+`d23597d6cba13f0e3b4797a0c813c14ef86c684c` lacks `nca_extract.py` and `inventory.py` (`main` still
+lacked both as of 2026-10-29), so use `--no-extract` when scaffolding from upstream LASRecomp.
+Confirm tool flags and diagnostic variables against the selected checkout before use.
 
 ## Milestone gates
 

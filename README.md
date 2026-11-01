@@ -38,18 +38,21 @@ before extraction. The package and keys can live outside the project or in its g
   `STATUS.md`, `.gitignore` for the new project
 - `tests/` — offline regression tests for the bootstrap (synthetic fixtures only)
 
-Not affiliated with Nintendo. The toolchain itself (`gen.py`, `lifter.py`, runtime) comes from
-a base repo, not this one. Fetch the pinned one with:
+Not affiliated with Nintendo. The toolchain itself (`gen.py`, `lifter.py`, `nca_extract.py`,
+`inventory.py`, runtime) comes from a base repo, not this one. Fetch the pinned default
+([EoWRecomp](https://github.com/Nycolazs/EoWRecomp), MIT) and bootstrap with:
 
 ```sh
-bash scripts/fetch_base.sh   # LASRecomp @ d23597d6 → ~/.cache/recomp/bases/, prints the path
-bash scripts/init_project.sh --out ../my-game --name mygame --no-extract   # uses it automatically
+bash scripts/fetch_base.sh   # EoWRecomp @ dd9c79d6 → ~/.cache/recomp/bases/, prints the path
+bash scripts/init_project.sh --pkg /path/to/game.nsp --keys /path/to/prod.keys \
+  --out ../my-game --name mygame
 ```
 
-The public LASRecomp base lacks the package extractor and inventory tools, so use
-`--no-extract` with it, or fetch an extended base with `fetch_base.sh --url <repo> --rev <sha>
---dest <dir>` and pass `--base <dir>`. Existing projects should continue from STATUS.md
-rather than rerun initialization. See SKILL.md for the capability checks.
+Use `--no-extract` to scaffold without a package, keys, or venv installation (or when using
+upstream LASRecomp via `fetch_base.sh --url https://github.com/peiikai/LASRecomp.git --rev
+d23597d6cba13f0e3b4797a0c813c14ef86c684c --dest <dir>`, which lacks the extractor). Existing
+projects should continue from STATUS.md rather than rerun initialization. See SKILL.md for the
+capability checks.
 
 Validate the bootstrap without game data or network access:
 

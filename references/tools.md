@@ -1,11 +1,12 @@
 # Tools and runtime: copy versus adapt
 
-Public lineage reference: [LASRecomp at d23597d6cba13f0e3b4797a0c813c14ef86c684c](https://github.com/peiikai/LASRecomp/tree/d23597d6cba13f0e3b4797a0c813c14ef86c684c).
-The original skill also described a local EoWRecomp extension without supplying its source
-revision. The table below describes that extension's expected interfaces, **not** the contents
-of every LASRecomp checkout. In particular the public revision lacks `nca_extract.py`,
-`inventory.py`, `nxpkg.c` and several listed diagnostics/tests. Verify paths, `--help`, license
-and behavior in the chosen base; stop or use scaffold-only mode when required tools are absent.
+Default pinned base: [EoWRecomp at dd9c79d6c01d9eaddafc1fc5a07b6658bfc56505](https://github.com/Nycolazs/EoWRecomp/tree/dd9c79d6c01d9eaddafc1fc5a07b6658bfc56505)
+(MIT, derived from [LASRecomp at d23597d6cba13f0e3b4797a0c813c14ef86c684c](https://github.com/peiikai/LASRecomp/tree/d23597d6cba13f0e3b4797a0c813c14ef86c684c)).
+EoWRecomp provides the full table below, including `nca_extract.py`, `inventory.py` and `nxpkg.c`
+(its `romfs.src` is written by the runtime's `nxpkg.c` setup, whereas `nca_extract.py` accepts
+`--info`, `--no-romfs` and `--romfs-image`). Upstream LASRecomp lacks `nca_extract.py`,
+`inventory.py` and `nxpkg.c`. Verify paths, `--help`, license and behavior in the chosen base;
+use `--no-extract` when scaffolding from a base without the extractor.
 
 The initializer copies tracked regular files under `tools/`, `runtime/`, `third_party/`, plus
 `Makefile` and `LICENSE`. It preserves a base README as `docs/BASE-README.md` for attribution,

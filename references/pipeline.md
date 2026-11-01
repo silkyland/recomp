@@ -48,13 +48,17 @@ valid for one set of module build IDs only.
 ## Stage 2 — extract
 
 ```
+# ExeFS only (fast; the runtime's nxpkg.c setup can write extracted/romfs.src, or pass --romfs-image):
 tools/venv/bin/python -E -s tools/nca_extract.py <prod.keys> <game.nsp|program.nca> extracted \
-    --no-romfs --romfs-src
+    --no-romfs
 ```
 
-- Writes `extracted/exefs/` (the NSOs + `main.npdm`) and `extracted/romfs.src` — a small descriptor
-  that lets the runtime read/decrypt/decompress RomFS straight from the package. Alternatives:
-  `--romfs-image` (one `romfs.bin`, can be 8+ GB) or a full `extracted/romfs/` tree (no flags).
+- Writes `extracted/exefs/` (the NSOs + `main.npdm`). For RomFS, either let the runtime's setup
+  (`runtime/nxpkg.c` in EoWRecomp, or `--romfs-src` on extractors that have that flag) write
+  `extracted/romfs.src` — a small descriptor that streams/decrypts/decompresses RomFS straight from
+  the package — or pass `--romfs-image` (one `romfs.bin`, can be 8+ GB) or no RomFS flags (full
+  `extracted/romfs/` tree). `init_project.sh --romfs auto` picks `--romfs-src` when the extractor
+  supports it, otherwise `--no-romfs`.
 - Gate: `exefs/` contains `main` and `main.npdm`, plus the modules required by this build.
   `sdk`, `subsdk*` and `rtld` depend on its layout; inventory what is present rather than assuming
   a fixed set. The runtime may replace rtld startup rather than lift it.
