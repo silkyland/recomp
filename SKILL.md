@@ -118,7 +118,9 @@ layout; remove or disable inherited game-specific patch/HLE registrations delibe
 - Use measured evidence: command exit status, tests, logs, screenshots and save round-trips.
   State which host/GPU backend was tested. Never infer playability from generation or a black frame.
 - Consult [references/hard-parts.md](references/hard-parts.md) when investigating synchronization,
-  shader or memory-layout failures; verify each proposed mechanism against the selected code.
+  shader, memory-layout or rendering-semantics failures (feedback loops, bindless, per-stage
+  programs, gamma); it also lists reference codebases worth cloning. Verify each proposed
+  mechanism against the selected code.
 - Update `docs/STATUS.md` with evidence, blockers and the next step. If blocked, report the exact
   missing input/capability rather than claiming a milestone passed.
 
